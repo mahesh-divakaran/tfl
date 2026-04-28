@@ -774,7 +774,8 @@ server <- function(input, output, session) {
       id  <- paste0("flt_", col)
       val <- input[[id]]
       # Skip NULL and empty values — selectizeInput returns NULL when nothing selected
-      if (!is.null(val) && length(val) > 0 && !all(val == "")) {
+      if (!is.null(val) && length(val) > 0 &&
+          !(is.character(val) && all(val == ""))) {
         filters[[col]] <- val
       }
     }
