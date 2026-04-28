@@ -360,10 +360,14 @@ gen_primary_endpoint <- function(adeff, adsl, pop_flag = "ITTFL") {
         N   <- Ns[[a]]
         ci  <- tryCatch({
           if (n > 0 && N > 0) {
+            # Wilson score interval (handles edge proportions correctly)
             p  <- n / N
-            se <- sqrt(p * (1 - p) / N)
-            sprintf("%s | 95%%CI: (%.1f%%, %.1f%%)",
-                    fmt_pct(n, N), 100*(p - 1.96*se), 100*(p + 1.96*se))
+            z  <- 1.96
+            centre <- (p + z^2/(2*N)) / (1 + z^2/N)
+            margin <- z * sqrt(p*(1-p)/N + z^2/(4*N^2)) / (1 + z^2/N)
+            lo <- max(0, centre - margin) * 100
+            hi <- min(100, centre + margin) * 100
+            sprintf("%s | 95%%CI: (%.1f%%, %.1f%%)", fmt_pct(n, N), lo, hi)
           } else fmt_pct(n, N)
         }, error = function(e) fmt_pct(n, N))
         ci

@@ -10,7 +10,7 @@ library(DT)
 library(scales)
 
 # Provide `%||%` for R < 4.4
-`%||%` <- function(x, y) if (!is.null(x) && length(x) > 0 && !is.na(x[1])) x else y
+`%||%` <- function(x, y) if (length(x) > 0 && !is.null(x) && !all(is.na(x))) x else y
 
 # Source utilities
 source("R/data_utils.R")

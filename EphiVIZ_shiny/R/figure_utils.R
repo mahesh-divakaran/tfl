@@ -255,8 +255,10 @@ gen_volcano <- function(adae, adsl) {
     n2 <- length(unique(ae_pt$USUBJID[ae_pt$USUBJID %in% s2]))
     r1 <- n1 / N1; r2 <- n2 / N2
     rr <- if (r2 > 0) log2(r1 / r2) else NA
-    p_val <- tryCatch(fisher.test(matrix(c(n1, N1-n1, n2, N2-n2), 2))$p.value, error=function(e) 1)
-    data.frame(PT = pt, RR_log2 = rr, P_neglog10 = -log10(p_val + 1e-10),
+    p_val <- tryCatch(fisher.test(matrix(c(n1, N1-n1, n2, N2-n2), 2))$p.value,
+                      error = function(e) NA_real_)
+    data.frame(PT = pt, RR_log2 = rr,
+               P_neglog10 = if (!is.na(p_val)) -log10(p_val + 1e-10) else NA_real_,
                N_arm1 = n1, N_arm2 = n2, stringsAsFactors = FALSE)
   }))
 

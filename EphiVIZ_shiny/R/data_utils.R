@@ -90,7 +90,13 @@ generate_synthetic_adam <- function(ds_name) {
         "SKIN AND SUBCUTANEOUS TISSUE DISORDERS" = c("RASH", "PRURITUS")
       )
       ae_soc <- sample(socs, n_ae, replace = TRUE)
-      ae_pt  <- mapply(function(s) sample(pts_by_soc[[s]], 1), ae_soc)
+      # Ensure only valid SOC keys are used
+      ae_soc <- socs[match(ae_soc, socs)]
+      ae_pt  <- sapply(ae_soc, function(s) {
+        pts <- pts_by_soc[[s]]
+        if (is.null(pts) || length(pts) == 0) return("UNKNOWN")
+        sample(pts, 1)
+      })
       data.frame(
         USUBJID = ae_subjs, STUDYID = "STUDY-001",
         TRTA = ae_trta, TRTAN = trtpn[match(ae_subjs, usubjids)],

@@ -83,9 +83,8 @@ gen_listing_lab_abnorm <- function(adlb, pop_flag = "SAFFL") {
     adlb[!is.na(adlb$SAFFL) & adlb$SAFFL == "Y", , drop = FALSE]
   else adlb
 
-  # Flag high values (> 2x baseline — simplified)
+  # Flag notable values: those at or above the 90th percentile per parameter
   if ("AVAL" %in% names(df) && "PARAM" %in% names(df)) {
-    # Simple filter: top 10% per param
     df <- do.call(rbind, lapply(split(df, df$PARAM), function(sub) {
       thresh <- quantile(sub$AVAL, .90, na.rm = TRUE)
       sub[!is.na(sub$AVAL) & sub$AVAL >= thresh, , drop = FALSE]

@@ -266,15 +266,13 @@ plot_corr_matrix <- function(df) {
   num_cols <- num_cols[seq_len(min(25, length(num_cols)))]
   corr_mat <- cor(df[, num_cols, drop = FALSE], use = "pairwise.complete.obs")
 
-  # Melt to long
-  corr_long <- do.call(rbind, lapply(seq_len(nrow(corr_mat)), function(i) {
-    do.call(rbind, lapply(seq_len(ncol(corr_mat)), function(j) {
-      data.frame(Var1 = rownames(corr_mat)[i],
-                 Var2 = colnames(corr_mat)[j],
-                 Corr = corr_mat[i, j],
-                 stringsAsFactors = FALSE)
-    }))
-  }))
+  # Melt correlation matrix to long format (vectorised)
+  corr_long <- data.frame(
+    Var1 = rep(rownames(corr_mat), times = ncol(corr_mat)),
+    Var2 = rep(colnames(corr_mat), each  = nrow(corr_mat)),
+    Corr = as.vector(corr_mat),
+    stringsAsFactors = FALSE
+  )
 
   show_labels <- length(num_cols) <= 20
 
