@@ -149,11 +149,13 @@ html, body {
   display: none;
   flex: 1;
   overflow: hidden;
+  min-height: 0;
 }
 
 .sub-screen.active {
   display: flex;
   flex-direction: column;
+  overflow: auto;
 }
 
 /* ── Layout: Sidebar + Main ── */
@@ -409,6 +411,7 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
 }
 
 .explorer-toolbar {

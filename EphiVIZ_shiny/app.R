@@ -21,7 +21,7 @@ source("R/explorer_utils.R")
 source("R/summary_utils.R")
 
 # ── Helper: styled DT datatable ──────────────────────────────────────────────
-ephiviz_dt <- function(df, caption = NULL, ...) {
+ephiviz_dt <- function(df, caption = NULL, scrollY_val = "60vh", ...) {
   DT::datatable(
     df,
     caption    = caption,
@@ -29,10 +29,11 @@ ephiviz_dt <- function(df, caption = NULL, ...) {
     escape     = FALSE,
     extensions = c("Buttons", "ColReorder", "Scroller"),
     options    = list(
-      dom          = "Bfrtip",
+      dom          = "Blfrtip",
       pageLength   = 25,
       lengthMenu   = list(c(25, 50, 100, -1), c("25", "50", "100", "All")),
       scrollX      = TRUE,
+      scrollY      = scrollY_val,
       colReorder   = TRUE,
       deferRender  = TRUE,
       scroller     = TRUE,
@@ -713,11 +714,12 @@ server <- function(input, output, session) {
     req(input$exp_ds)
     df <- get_ds(input$exp_ds)
     if (is.null(df)) {
-      showNotification(paste(input$exp_ds, "not loaded yet. Loading now..."),
-                       type = "warning", duration = 3)
-      load_ds(input$exp_ds)
-      df <- get_ds(input$exp_ds)
+      # Load synchronously
+      df <- load_adam_data(input$exp_ds)
+      rv[[input$exp_ds]] <- df
+      if (!input$exp_ds %in% rv$loaded) rv$loaded <- c(rv$loaded, input$exp_ds)
     }
+    req(df)
     df
   })
 
@@ -771,9 +773,10 @@ server <- function(input, output, session) {
     }
   })
 
-  # Apply filters reactively (on button click)
-  filtered_data <- eventReactive(input$exp_apply, {
+  # Apply filters reactively (auto-apply on any filter change or dataset change)
+  filtered_data <- reactive({
     df  <- exp_data_raw()
+    req(df)
     flt <- active_filters()
     result <- apply_explorer_filters(df, flt)
 
@@ -789,18 +792,13 @@ server <- function(input, output, session) {
       }
     }
     result
-  }, ignoreNULL = FALSE)
-
-  # Also update when dataset changes
-  observeEvent(input$exp_ds, {
-    df <- exp_data_raw()
-    rv$filtered_data <- df
   })
 
-  # Show unfiltered data initially, filtered after Apply
+  # Dataset change is handled automatically by reactive chain
+
+  # Show filtered data (auto-updates reactively)
   exp_display_data <- reactive({
-    if (!is.null(filtered_data())) filtered_data()
-    else exp_data_raw()
+    filtered_data()
   })
 
   # Row count badge
@@ -896,6 +894,11 @@ server <- function(input, output, session) {
   })
 
   sum_datasets <- reactive({
+    # Ensure at least ADSL is loaded for summary
+    if (is.null(rv$ADSL)) {
+      rv$ADSL <- load_adam_data("ADSL")
+      if (!"ADSL" %in% rv$loaded) rv$loaded <- c(rv$loaded, "ADSL")
+    }
     list(ADSL = rv$ADSL, ADAE = rv$ADAE, ADLB = rv$ADLB,
          ADVS = rv$ADVS, ADCM = rv$ADCM, ADEFF = rv$ADEFF)
   })
@@ -903,8 +906,14 @@ server <- function(input, output, session) {
   sum_selected_df <- reactive({
     req(input$sum_ds)
     df <- get_ds(input$sum_ds)
-    if (is.null(df)) load_ds(input$sum_ds)
-    get_ds(input$sum_ds)
+    if (is.null(df)) {
+      # Load synchronously and store
+      df <- load_adam_data(input$sum_ds)
+      rv[[input$sum_ds]] <- df
+      if (!input$sum_ds %in% rv$loaded) rv$loaded <- c(rv$loaded, input$sum_ds)
+    }
+    req(df)
+    df
   })
 
   sum_overview <- reactive({
