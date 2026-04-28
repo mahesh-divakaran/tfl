@@ -741,6 +741,11 @@ server <- function(input, output, session) {
     df
   })
 
+  # Reset applied filters when dataset changes
+  observeEvent(input$exp_ds, {
+    applied_filters(list())
+  })
+
   # Filter panel UI
   output$exp_filters_ui <- renderUI({
     df <- exp_data_raw()
@@ -768,7 +773,9 @@ server <- function(input, output, session) {
     for (col in cols) {
       id  <- paste0("flt_", col)
       val <- input[[id]]
-      if (!is.null(val) && length(val) > 0) {
+      # Skip NULL and empty values — selectizeInput returns NULL when nothing selected
+      if (!is.null(val) && length(val) > 0 &&
+          !(is.character(val) && all(val == ""))) {
         filters[[col]] <- val
       }
     }
@@ -779,7 +786,7 @@ server <- function(input, output, session) {
   output$exp_active_badge <- renderUI({
     df  <- exp_data_raw()
     req(df)
-    flt <- active_filters()
+    flt <- applied_filters()
     n   <- count_active_filters(flt, df)
     if (n > 0) {
       tags$span(class = "row-count-badge",
@@ -791,10 +798,14 @@ server <- function(input, output, session) {
     }
   })
 
-  # Apply filters reactively (auto-apply on any filter change or dataset change)
+  # Applied filters — only update when user clicks "Apply Filters"
+  # Default: empty list (no filters → show all data)
+  applied_filters <- reactiveVal(list())
+
+  # Apply filters reactively using the applied (snapshotted) filters
   filtered_data <- reactive({
     df  <- exp_data_raw()
-    flt <- active_filters()
+    flt <- applied_filters()
     result <- apply_explorer_filters(df, flt)
 
     # Quick text search
@@ -846,13 +857,15 @@ server <- function(input, output, session) {
     ephiviz_dt(df)
   })
 
-  # Apply Filters button — forces a fresh filter evaluation and confirmation
+  # Apply Filters button — snapshot current filter selections
   observeEvent(input$exp_apply, {
-    df <- exp_display_data()
-    raw <- exp_data_raw()
-    req(df, raw)
-    n_shown <- nrow(df)
-    n_total <- nrow(raw)
+    flt <- active_filters()
+    applied_filters(flt)
+    df  <- exp_data_raw()
+    req(df)
+    result <- apply_explorer_filters(df, flt)
+    n_shown <- nrow(result)
+    n_total <- nrow(df)
     showNotification(
       sprintf("✓ Filters applied: showing %s of %s rows",
               format(n_shown, big.mark = ","), format(n_total, big.mark = ",")),
@@ -872,10 +885,11 @@ server <- function(input, output, session) {
       id   <- paste0("flt_", col)
       switch(type,
         CHR  = ,
-        FLAG = ,
+        FLAG = {
+          updateSelectizeInput(session, id, selected = character(0))
+        },
         LOGI = {
-          vals <- sort(unique(x[!is.na(x)]))
-          updateCheckboxGroupInput(session, id, selected = vals)
+          updateSelectizeInput(session, id, selected = character(0))
         },
         NUM  = {
           mn <- floor(min(x, na.rm = TRUE) * 10) / 10
@@ -893,6 +907,8 @@ server <- function(input, output, session) {
     }
     # Reset text search
     updateTextInput(session, "exp_search", value = "")
+    # Reset applied filters
+    applied_filters(list())
     showNotification("✓ All filters cleared", type = "message", duration = 2)
   })
 
@@ -1041,7 +1057,6 @@ server <- function(input, output, session) {
 
   # Correlation matrix
   output$sum_corr_plot <- renderPlot({
-    req(input$corr_toggle)
     df <- sum_selected_df()
     req(df)
     plot_corr_matrix(df)
