@@ -1140,6 +1140,13 @@ server <- function(input, output, session) {
       if (codeEl) {
         navigator.clipboard.writeText(codeEl.textContent).then(function() {
           Shiny.setInputValue('copy_done', Math.random());
+        }).catch(function() {
+          // Fallback: select text for manual copy
+          var range = document.createRange();
+          range.selectNode(codeEl);
+          window.getSelection().removeAllRanges();
+          window.getSelection().addRange(range);
+          Shiny.setInputValue('copy_fallback', Math.random());
         });
       }
     ")

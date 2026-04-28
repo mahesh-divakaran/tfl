@@ -141,7 +141,8 @@ gen_km_curve <- function(adsl) {
       start <- if (i == 1) 1 else cumsum(fit$strata)[i-1] + 1
       end   <- cumsum(fit$strata)[i]
       idx   <- start:end
-      grp_name <- gsub("^.*=", "", names(fit$strata)[i])
+      grp_name <- names(fit$strata)[i]
+      if (grepl("=", grp_name)) grp_name <- gsub("^.*=", "", grp_name)
       data.frame(
         time     = c(0, fit$time[idx]),
         surv     = c(1, fit$surv[idx]),
