@@ -624,6 +624,19 @@ server <- function(input, output, session) {
     df
   }
 
+  # ── Helper: resolve configured caption or fallback ──────────────────────
+  resolve_caption <- function(fallback) {
+    parts <- c(rv$cfg_title1, rv$cfg_title2, rv$cfg_title3)
+    parts <- parts[nzchar(parts %||% "")]
+    if (length(parts) > 0) paste(parts, collapse = " \u2014 ") else fallback
+  }
+
+  resolve_footnote <- function(fallback) {
+    parts <- c(rv$cfg_fn1, rv$cfg_fn2, rv$cfg_fn3)
+    parts <- parts[nzchar(parts %||% "")]
+    if (length(parts) > 0) paste(parts, collapse = " ") else fallback
+  }
+
   loaded_ds_names <- reactive({
     rv$loaded
   })
@@ -833,6 +846,20 @@ server <- function(input, output, session) {
     ephiviz_dt(df)
   })
 
+  # Apply Filters button — forces a fresh filter evaluation and confirmation
+  observeEvent(input$exp_apply, {
+    df <- exp_display_data()
+    raw <- exp_data_raw()
+    req(df, raw)
+    n_shown <- nrow(df)
+    n_total <- nrow(raw)
+    showNotification(
+      sprintf("✓ Filters applied: showing %s of %s rows",
+              format(n_shown, big.mark = ","), format(n_total, big.mark = ",")),
+      type = "message", duration = 3
+    )
+  })
+
   # Clear all filters
   observeEvent(input$exp_clear, {
     df <- exp_data_raw()
@@ -874,7 +901,11 @@ server <- function(input, output, session) {
     filename = function() paste0(input$exp_ds, "_filtered_", Sys.Date(), ".csv"),
     content  = function(file) {
       df <- exp_display_data()
-      readr::write_csv(df, file)
+      if (requireNamespace("readr", quietly = TRUE)) {
+        readr::write_csv(df, file)
+      } else {
+        utils::write.csv(df, file, row.names = FALSE)
+      }
     }
   )
 
@@ -882,7 +913,13 @@ server <- function(input, output, session) {
     filename = function() paste0(input$exp_ds, "_filtered_", Sys.Date(), ".xlsx"),
     content  = function(file) {
       df <- exp_display_data()
-      openxlsx::write.xlsx(df, file)
+      if (requireNamespace("openxlsx", quietly = TRUE)) {
+        openxlsx::write.xlsx(df, file)
+      } else {
+        # Fallback to CSV if openxlsx not available
+        utils::write.csv(df, file, row.names = FALSE)
+        showNotification("openxlsx not installed — exported as CSV instead", type = "warning")
+      }
     }
   )
 
@@ -969,7 +1006,11 @@ server <- function(input, output, session) {
     content  = function(file) {
       df <- sum_selected_df()
       specs <- build_col_summary(df)
-      readr::write_csv(specs, file)
+      if (requireNamespace("readr", quietly = TRUE)) {
+        readr::write_csv(specs, file)
+      } else {
+        utils::write.csv(specs, file, row.names = FALSE)
+      }
     }
   )
 
@@ -989,8 +1030,7 @@ server <- function(input, output, session) {
 
   # Treatment overview plot
   output$sum_trt_plot <- renderPlot({
-    adsl <- rv$ADSL
-    if (is.null(adsl)) adsl <- load_adam_data("ADSL")
+    adsl <- ensure_ds_loaded("ADSL")
     plot_treatment_overview(adsl)
   }, res = 96)
 
@@ -1042,46 +1082,34 @@ server <- function(input, output, session) {
   tbl_result <- reactiveVal(NULL)
 
   observeEvent(input$tbl_generate, {
-    adsl  <- rv$ADSL
+    adsl  <- ensure_ds_loaded("ADSL")
     adae  <- rv$ADAE
     adlb  <- rv$ADLB
     adeff <- rv$ADEFF
     pop   <- input$tbl_pop
-
-    if (is.null(adsl)) {
-      adsl <- load_adam_data("ADSL")
-      rv$ADSL <- adsl
-      if (!"ADSL" %in% rv$loaded) rv$loaded <- c(rv$loaded, "ADSL")
-    }
+    merge_adsl <- isTRUE(input$tbl_merge_adsl)
 
     result <- tryCatch({
       switch(input$tbl_type,
         "14.1.1 — Demographics"     = gen_demographics(adsl, pop),
         "14.2.1 — Primary Endpoint" = {
-          if (is.null(adeff)) {
-            adeff <- load_adam_data("ADEFF"); rv$ADEFF <- adeff
-            if (!"ADEFF" %in% rv$loaded) rv$loaded <- c(rv$loaded, "ADEFF")
-          }
+          adeff <- ensure_ds_loaded("ADEFF")
           gen_primary_endpoint(adeff, adsl, pop)
         },
         "14.3.1 — AE Summary"       = {
-          if (is.null(adae)) {
-            adae <- load_adam_data("ADAE"); rv$ADAE <- adae
-            if (!"ADAE" %in% rv$loaded) rv$loaded <- c(rv$loaded, "ADAE")
-          }
+          adae <- ensure_ds_loaded("ADAE")
           gen_ae_summary(adae, adsl, pop)
         },
         "14.3.2 — AE by SOC/PT"     = {
-          if (is.null(adae)) {
-            adae <- load_adam_data("ADAE"); rv$ADAE <- adae
-            if (!"ADAE" %in% rv$loaded) rv$loaded <- c(rv$loaded, "ADAE")
-          }
+          adae <- ensure_ds_loaded("ADAE")
           gen_ae_by_soc(adae, adsl, pop)
         },
         "14.4.1 — Lab Summary"      = {
-          if (is.null(adlb)) {
-            adlb <- load_adam_data("ADLB"); rv$ADLB <- adlb
-            if (!"ADLB" %in% rv$loaded) rv$loaded <- c(rv$loaded, "ADLB")
+          adlb <- ensure_ds_loaded("ADLB")
+          if (merge_adsl && !is.null(adsl)) {
+            merge_cols <- unique(c("USUBJID", setdiff(names(adsl), names(adlb))))
+            adlb <- merge(adlb, adsl[, intersect(merge_cols, names(adsl)), drop = FALSE],
+                          by = "USUBJID", all.x = TRUE)
           }
           gen_lab_summary(adlb, pop)
         },
@@ -1097,12 +1125,14 @@ server <- function(input, output, session) {
 
   output$tbl_caption_ui <- renderUI({
     res <- tbl_result()
-    if (!is.null(res)) tags$p(class = "tbl-caption", res$caption)
+    if (is.null(res)) return(NULL)
+    tags$p(class = "tbl-caption", resolve_caption(res$caption))
   })
 
   output$tbl_footnote_ui <- renderUI({
     res <- tbl_result()
-    if (!is.null(res)) tags$p(class = "tbl-footnote", res$footnote)
+    if (is.null(res)) return(NULL)
+    tags$p(class = "tbl-footnote", resolve_footnote(res$footnote))
   })
 
   output$tbl_output <- DT::renderDataTable({
@@ -1196,9 +1226,14 @@ server <- function(input, output, session) {
         writeLines("No table generated.", file)
         return()
       }
+      if (!requireNamespace("flextable", quietly = TRUE)) {
+        writeLines("Package 'flextable' is required for RTF export. Install with: install.packages('flextable')", file)
+        return()
+      }
       tryCatch({
+        caption <- resolve_caption(res$caption)
         ft <- flextable::flextable(res$data)
-        ft <- flextable::set_caption(ft, caption = res$caption)
+        ft <- flextable::set_caption(ft, caption = caption)
         ft <- flextable::bg(ft, bg = "#431407", part = "header")
         ft <- flextable::color(ft, color = "white", part = "header")
         flextable::save_as_rtf(ft, path = file)
@@ -1215,33 +1250,22 @@ server <- function(input, output, session) {
   lst_result <- reactiveVal(NULL)
 
   observeEvent(input$lst_generate, {
-    adsl <- rv$ADSL; adae <- rv$ADAE; adlb <- rv$ADLB
-    advs <- rv$ADVS; adcm <- rv$ADCM
     pop  <- input$lst_pop
-
-    auto_load <- function(ds_name) {
-      if (is.null(rv[[ds_name]])) {
-        df <- load_adam_data(ds_name)
-        rv[[ds_name]] <- df
-        if (!ds_name %in% rv$loaded) rv$loaded <- c(rv$loaded, ds_name)
-        df
-      } else rv[[ds_name]]
-    }
 
     result <- tryCatch({
       switch(input$lst_type,
         "All Adverse Events"      = {
-          gen_listing_ae_all(auto_load("ADAE"), auto_load("ADSL"), pop)
+          gen_listing_ae_all(ensure_ds_loaded("ADAE"), ensure_ds_loaded("ADSL"), pop)
         },
         "Serious Adverse Events"  = {
-          gen_listing_ae_serious(auto_load("ADAE"), auto_load("ADSL"), pop)
+          gen_listing_ae_serious(ensure_ds_loaded("ADAE"), ensure_ds_loaded("ADSL"), pop)
         },
-        "Lab Abnormalities"       = gen_listing_lab_abnorm(auto_load("ADLB"), pop),
+        "Lab Abnormalities"       = gen_listing_lab_abnorm(ensure_ds_loaded("ADLB"), pop),
         "Concomitant Medications" = {
-          gen_listing_conmeds(auto_load("ADCM"), auto_load("ADSL"), pop)
+          gen_listing_conmeds(ensure_ds_loaded("ADCM"), ensure_ds_loaded("ADSL"), pop)
         },
-        "Subject Disposition"     = gen_listing_disposition(auto_load("ADSL"), pop),
-        "Vital Signs"             = gen_listing_vs(auto_load("ADVS"), pop),
+        "Subject Disposition"     = gen_listing_disposition(ensure_ds_loaded("ADSL"), pop),
+        "Vital Signs"             = gen_listing_vs(ensure_ds_loaded("ADVS"), pop),
         NULL
       )
     }, error = function(e) {
@@ -1298,6 +1322,10 @@ server <- function(input, output, session) {
     content  = function(file) {
       res <- lst_result()
       if (is.null(res)) { writeLines("No listing generated.", file); return() }
+      if (!requireNamespace("flextable", quietly = TRUE)) {
+        writeLines("Package 'flextable' is required for RTF export. Install with: install.packages('flextable')", file)
+        return()
+      }
       tryCatch({
         ft <- flextable::flextable(res$data)
         ft <- flextable::set_caption(ft, caption = res$caption)
@@ -1315,24 +1343,13 @@ server <- function(input, output, session) {
   fig_plot <- reactiveVal(NULL)
 
   observeEvent(input$fig_generate, {
-    adsl <- rv$ADSL; adae <- rv$ADAE; adlb <- rv$ADLB; adeff <- rv$ADEFF
-
-    auto_load <- function(ds_name) {
-      if (is.null(rv[[ds_name]])) {
-        df <- load_adam_data(ds_name)
-        rv[[ds_name]] <- df
-        if (!ds_name %in% rv$loaded) rv$loaded <- c(rv$loaded, ds_name)
-        df
-      } else rv[[ds_name]]
-    }
-
     p <- tryCatch({
       switch(input$fig_type,
-        "eDISH Plot"    = gen_edish(auto_load("ADLB")),
-        "KM Curve"      = gen_km_curve(auto_load("ADSL")),
-        "Waterfall Plot" = gen_waterfall(auto_load("ADEFF"), auto_load("ADSL")),
-        "Volcano Plot"  = gen_volcano(auto_load("ADAE"), auto_load("ADSL")),
-        "Lab Box Plot"  = gen_lab_boxplot(auto_load("ADLB"), input$fig_lab_param),
+        "eDISH Plot"    = gen_edish(ensure_ds_loaded("ADLB")),
+        "KM Curve"      = gen_km_curve(ensure_ds_loaded("ADSL")),
+        "Waterfall Plot" = gen_waterfall(ensure_ds_loaded("ADEFF"), ensure_ds_loaded("ADSL")),
+        "Volcano Plot"  = gen_volcano(ensure_ds_loaded("ADAE"), ensure_ds_loaded("ADSL")),
+        "Lab Box Plot"  = gen_lab_boxplot(ensure_ds_loaded("ADLB"), input$fig_lab_param),
         NULL
       )
     }, error = function(e) {
