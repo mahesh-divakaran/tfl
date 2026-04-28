@@ -403,12 +403,4 @@ compute_dq_flags <- function(datasets) {
   do.call(rbind, flags)
 }
 
-#' Helper: column_type_category re-exported for use in summary_utils
-col_type_category <- function(x) {
-  if (is.logical(x))                                    return("LOGI")
-  if (inherits(x, c("Date", "POSIXct", "POSIXlt")))    return("DATE")
-  if (is.numeric(x))                                    return("NUM")
-  vals <- unique(x[!is.na(x)])
-  if (length(vals) <= 2 && all(vals %in% c("Y", "N", "", "0", "1"))) return("FLAG")
-  return("CHR")
-}
+# col_type_category is defined in explorer_utils.R (sourced before this file)
