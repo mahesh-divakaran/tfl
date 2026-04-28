@@ -99,15 +99,20 @@ count_active_filters <- function(filters, df) {
       CHR  = ,
       FLAG = ,
       LOGI = {
-        all_vals <- unique(x[!is.na(x)])
-        !setequal(val, all_vals)
+        # If values are selected, filter is active
+        length(val) > 0
       },
       NUM  = {
         if (length(val) == 2) {
           val[1] > min(x, na.rm = TRUE) || val[2] < max(x, na.rm = TRUE)
         } else FALSE
       },
-      DATE = FALSE,
+      DATE = {
+        if (length(val) == 2) {
+          dts <- as.Date(x[!is.na(x)])
+          as.Date(val[1]) > min(dts) || as.Date(val[2]) < max(dts)
+        } else FALSE
+      },
       FALSE
     )
     if (isTRUE(active)) n <- n + 1
@@ -128,12 +133,13 @@ build_filter_widget_ui <- function(col, x, ns) {
     CHR  = ,
     FLAG = {
       vals <- sort(unique(x[!is.na(x)]))
-      if (length(vals) > 20) {
-        shiny::textInput(input_id, label = NULL, placeholder = "Type to filter (comma-separated)")
-      } else {
-        shiny::checkboxGroupInput(input_id, label = NULL, choices = vals, selected = vals,
-                                  inline = FALSE)
-      }
+      shiny::selectizeInput(input_id, label = NULL,
+                            choices = vals, selected = NULL,
+                            multiple = TRUE,
+                            options = list(
+                              placeholder = "Select values to filter...",
+                              plugins = list("remove_button")
+                            ))
     },
     NUM  = {
       mn <- floor(min(x, na.rm = TRUE) * 10) / 10
@@ -150,8 +156,13 @@ build_filter_widget_ui <- function(col, x, ns) {
                              start = min(dts), end = max(dts))
     },
     LOGI = {
-      shiny::checkboxGroupInput(input_id, label = NULL, choices = c("TRUE", "FALSE"),
-                                selected = c("TRUE", "FALSE"))
+      shiny::selectizeInput(input_id, label = NULL,
+                            choices = c("TRUE", "FALSE"), selected = NULL,
+                            multiple = TRUE,
+                            options = list(
+                              placeholder = "Select values to filter...",
+                              plugins = list("remove_button")
+                            ))
     },
     shiny::tags$span("—", class = "text-muted")
   )
