@@ -128,20 +128,28 @@ gen_km_curve <- function(adsl) {
   }
 
   # Build plot data manually
-  km_data <- do.call(rbind, lapply(seq_along(fit$strata), function(i) {
-    start <- if (i == 1) 1 else cumsum(fit$strata)[i-1] + 1
-    end   <- cumsum(fit$strata)[i]
-    idx   <- start:end
-    grp_name <- if (!is.null(trt_col)) {
-      gsub(paste0("df\\[\\[trt_col\\]\\]="), "", names(fit$strata)[i])
-    } else "All"
-    data.frame(
-      time     = c(0, fit$time[idx]),
-      surv     = c(1, fit$surv[idx]),
-      Group    = grp_name,
+  if (is.null(fit$strata)) {
+    # Single group (no strata)
+    km_data <- data.frame(
+      time  = c(0, fit$time),
+      surv  = c(1, fit$surv),
+      Group = "All",
       stringsAsFactors = FALSE
     )
-  }))
+  } else {
+    km_data <- do.call(rbind, lapply(seq_along(fit$strata), function(i) {
+      start <- if (i == 1) 1 else cumsum(fit$strata)[i-1] + 1
+      end   <- cumsum(fit$strata)[i]
+      idx   <- start:end
+      grp_name <- gsub("^.*=", "", names(fit$strata)[i])
+      data.frame(
+        time     = c(0, fit$time[idx]),
+        surv     = c(1, fit$surv[idx]),
+        Group    = grp_name,
+        stringsAsFactors = FALSE
+      )
+    }))
+  }
 
   p <- ggplot2::ggplot(km_data, ggplot2::aes(x = time, y = surv, colour = Group)) +
     ggplot2::geom_step(linewidth = 1) +

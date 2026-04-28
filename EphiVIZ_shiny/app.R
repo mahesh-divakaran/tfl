@@ -66,6 +66,7 @@ ephiviz_dt <- function(df, caption = NULL, ...) {
 ui <- fluidPage(
   useShinyjs(),
   tags$head(
+    tags$meta(name = "viewport", content = "width=device-width, initial-scale=1"),
     tags$link(rel = "stylesheet", href = "style.css"),
     tags$title("EphiVIZ v3 — Clinical TLF Builder")
   ),
@@ -467,8 +468,8 @@ ui <- fluidPage(
         ),
 
         tags$div(class = "tlf-main",
-          tags$div(class = "fig-container",
-            plotOutput("fig_output", height = "440px", width = "100%")
+          tags$div(class = "fig-container", style = "flex:1;",
+            plotOutput("fig_output", height = "100%", width = "100%")
           )
         )
       )
@@ -1132,6 +1133,49 @@ server <- function(input, output, session) {
     ))
   })
 
+  # Copy R code to clipboard
+  observeEvent(input$copy_rcode, {
+    runjs("
+      var codeEl = document.getElementById('rcode_pre');
+      if (codeEl) {
+        navigator.clipboard.writeText(codeEl.textContent).then(function() {
+          Shiny.setInputValue('copy_done', Math.random());
+        });
+      }
+    ")
+    showNotification("✓ Code copied to clipboard", type = "message", duration = 2)
+  })
+
+  # Table configuration modal
+  observeEvent(input$tbl_config, {
+    showModal(modalDialog(
+      title  = "Table Configuration",
+      size   = "l",
+      footer = tagList(
+        actionButton("cfg_save", "💾 Save", class = "btn-sm primary"),
+        modalButton("Close")
+      ),
+      textInput("cfg_title1_input", "Title Line 1:", value = rv$cfg_title1, width = "100%"),
+      textInput("cfg_title2_input", "Title Line 2:", value = rv$cfg_title2, width = "100%"),
+      textInput("cfg_title3_input", "Title Line 3:", value = rv$cfg_title3, width = "100%"),
+      tags$hr(),
+      textInput("cfg_fn1_input", "Footnote Line 1:", value = rv$cfg_fn1, width = "100%"),
+      textInput("cfg_fn2_input", "Footnote Line 2:", value = rv$cfg_fn2, width = "100%"),
+      textInput("cfg_fn3_input", "Footnote Line 3:", value = rv$cfg_fn3, width = "100%")
+    ))
+  })
+
+  observeEvent(input$cfg_save, {
+    rv$cfg_title1 <- input$cfg_title1_input %||% ""
+    rv$cfg_title2 <- input$cfg_title2_input %||% ""
+    rv$cfg_title3 <- input$cfg_title3_input %||% ""
+    rv$cfg_fn1    <- input$cfg_fn1_input %||% ""
+    rv$cfg_fn2    <- input$cfg_fn2_input %||% ""
+    rv$cfg_fn3    <- input$cfg_fn3_input %||% ""
+    removeModal()
+    showNotification("✓ Configuration saved", type = "message", duration = 2)
+  })
+
   # Table download RTF
   output$tbl_dl_rtf <- downloadHandler(
     filename = function() paste0(gsub("[^A-Za-z0-9]", "_", input$tbl_type), ".rtf"),
@@ -1298,7 +1342,10 @@ server <- function(input, output, session) {
         ggplot2::theme_void() +
         ggplot2::theme(plot.background = ggplot2::element_rect(fill = "#fff7ed", colour = NA))
     } else p
-  }, height = 440, width = function() session$clientData$output_fig_output_width %||% 700)
+  }, height = function() {
+    h <- session$clientData$output_fig_output_height
+    if (is.null(h) || h < 200) 500 else h
+  }, width = function() session$clientData$output_fig_output_width %||% 700)
 
   # Figure R code
   observeEvent(input$fig_rcode, {
