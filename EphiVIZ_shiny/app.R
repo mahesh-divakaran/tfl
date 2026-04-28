@@ -613,6 +613,17 @@ server <- function(input, output, session) {
   # ── Helper: get a dataset by name ─────────────────────────────────────────
   get_ds <- function(name) rv[[name]]
 
+  # ── Helper: ensure a dataset is loaded (synchronous) ────────────────────
+  ensure_ds_loaded <- function(ds_name) {
+    df <- rv[[ds_name]]
+    if (is.null(df)) {
+      df <- load_adam_data(ds_name)
+      rv[[ds_name]] <- df
+      if (!ds_name %in% rv$loaded) rv$loaded <- c(rv$loaded, ds_name)
+    }
+    df
+  }
+
   loaded_ds_names <- reactive({
     rv$loaded
   })
@@ -712,13 +723,7 @@ server <- function(input, output, session) {
   # Current explorer dataset
   exp_data_raw <- reactive({
     req(input$exp_ds)
-    df <- get_ds(input$exp_ds)
-    if (is.null(df)) {
-      # Load synchronously
-      df <- load_adam_data(input$exp_ds)
-      rv[[input$exp_ds]] <- df
-      if (!input$exp_ds %in% rv$loaded) rv$loaded <- c(rv$loaded, input$exp_ds)
-    }
+    df <- ensure_ds_loaded(input$exp_ds)
     req(df)
     df
   })
@@ -776,7 +781,6 @@ server <- function(input, output, session) {
   # Apply filters reactively (auto-apply on any filter change or dataset change)
   filtered_data <- reactive({
     df  <- exp_data_raw()
-    req(df)
     flt <- active_filters()
     result <- apply_explorer_filters(df, flt)
 
@@ -895,23 +899,14 @@ server <- function(input, output, session) {
 
   sum_datasets <- reactive({
     # Ensure at least ADSL is loaded for summary
-    if (is.null(rv$ADSL)) {
-      rv$ADSL <- load_adam_data("ADSL")
-      if (!"ADSL" %in% rv$loaded) rv$loaded <- c(rv$loaded, "ADSL")
-    }
+    ensure_ds_loaded("ADSL")
     list(ADSL = rv$ADSL, ADAE = rv$ADAE, ADLB = rv$ADLB,
          ADVS = rv$ADVS, ADCM = rv$ADCM, ADEFF = rv$ADEFF)
   })
 
   sum_selected_df <- reactive({
     req(input$sum_ds)
-    df <- get_ds(input$sum_ds)
-    if (is.null(df)) {
-      # Load synchronously and store
-      df <- load_adam_data(input$sum_ds)
-      rv[[input$sum_ds]] <- df
-      if (!input$sum_ds %in% rv$loaded) rv$loaded <- c(rv$loaded, input$sum_ds)
-    }
+    df <- ensure_ds_loaded(input$sum_ds)
     req(df)
     df
   })
