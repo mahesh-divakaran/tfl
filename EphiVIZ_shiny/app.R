@@ -624,6 +624,19 @@ server <- function(input, output, session) {
     df
   }
 
+  # ── Helper: resolve configured caption or fallback ──────────────────────
+  resolve_caption <- function(fallback) {
+    parts <- c(rv$cfg_title1, rv$cfg_title2, rv$cfg_title3)
+    parts <- parts[nzchar(parts %||% "")]
+    if (length(parts) > 0) paste(parts, collapse = " \u2014 ") else fallback
+  }
+
+  resolve_footnote <- function(fallback) {
+    parts <- c(rv$cfg_fn1, rv$cfg_fn2, rv$cfg_fn3)
+    parts <- parts[nzchar(parts %||% "")]
+    if (length(parts) > 0) paste(parts, collapse = " ") else fallback
+  }
+
   loaded_ds_names <- reactive({
     rv$loaded
   })
@@ -1094,8 +1107,7 @@ server <- function(input, output, session) {
         "14.4.1 — Lab Summary"      = {
           adlb <- ensure_ds_loaded("ADLB")
           if (merge_adsl && !is.null(adsl)) {
-            merge_cols <- setdiff(names(adsl), names(adlb))
-            merge_cols <- c("USUBJID", merge_cols)
+            merge_cols <- unique(c("USUBJID", setdiff(names(adsl), names(adlb))))
             adlb <- merge(adlb, adsl[, intersect(merge_cols, names(adsl)), drop = FALSE],
                           by = "USUBJID", all.x = TRUE)
           }
@@ -1114,25 +1126,13 @@ server <- function(input, output, session) {
   output$tbl_caption_ui <- renderUI({
     res <- tbl_result()
     if (is.null(res)) return(NULL)
-    # Use configured title if set, otherwise use generated caption
-    caption <- if (nzchar(rv$cfg_title1 %||% "")) {
-      paste(c(rv$cfg_title1, rv$cfg_title2, rv$cfg_title3)[
-        nzchar(c(rv$cfg_title1, rv$cfg_title2, rv$cfg_title3))
-      ], collapse = " — ")
-    } else res$caption
-    tags$p(class = "tbl-caption", caption)
+    tags$p(class = "tbl-caption", resolve_caption(res$caption))
   })
 
   output$tbl_footnote_ui <- renderUI({
     res <- tbl_result()
     if (is.null(res)) return(NULL)
-    # Use configured footnotes if set, otherwise use generated footnote
-    footnote <- if (nzchar(rv$cfg_fn1 %||% "")) {
-      paste(c(rv$cfg_fn1, rv$cfg_fn2, rv$cfg_fn3)[
-        nzchar(c(rv$cfg_fn1, rv$cfg_fn2, rv$cfg_fn3))
-      ], collapse = " ")
-    } else res$footnote
-    tags$p(class = "tbl-footnote", footnote)
+    tags$p(class = "tbl-footnote", resolve_footnote(res$footnote))
   })
 
   output$tbl_output <- DT::renderDataTable({
@@ -1231,12 +1231,7 @@ server <- function(input, output, session) {
         return()
       }
       tryCatch({
-        # Use configured title if available
-        caption <- if (nzchar(rv$cfg_title1 %||% "")) {
-          paste(c(rv$cfg_title1, rv$cfg_title2, rv$cfg_title3)[
-            nzchar(c(rv$cfg_title1, rv$cfg_title2, rv$cfg_title3))
-          ], collapse = " — ")
-        } else res$caption
+        caption <- resolve_caption(res$caption)
         ft <- flextable::flextable(res$data)
         ft <- flextable::set_caption(ft, caption = caption)
         ft <- flextable::bg(ft, bg = "#431407", part = "header")
